@@ -1,7 +1,7 @@
 package com.alibaba.datax.plugin.writer.kuduwriter;
 public class Key {
     /**
-     * mongodb 的 host 地址
+     * KUDU 的 kudu_masters 地址
      */
     public static final String KUDU_MASTERS = "kudu_masters";
     /**
@@ -9,7 +9,7 @@ public class Key {
      */
     public static final String TABLE_NAME = "tableName";
     /**
-     * mongodb 的列
+     * KUDU 的列
      */
     public static final String KUDU_COLUMN = "column";
     /**

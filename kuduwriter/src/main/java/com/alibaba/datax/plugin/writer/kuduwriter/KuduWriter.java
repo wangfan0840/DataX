@@ -196,7 +196,7 @@ public class KuduWriter extends Writer{
                     row.addInt(index, record.getColumn(index).asDouble().intValue());
                     return;
                 case INT64:
-                    row.addInt(index, record.getColumn(index).asDouble().intValue());
+                    row.addLong(index, record.getColumn(index).asLong().longValue());
                     return;
                 case UNIXTIME_MICROS:
                     row.addLong(index, record.getColumn(index).asLong());
