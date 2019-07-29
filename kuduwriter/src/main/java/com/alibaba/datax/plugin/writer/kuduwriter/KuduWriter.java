@@ -4,7 +4,9 @@ import com.alibaba.datax.common.exception.DataXException;
 import com.alibaba.datax.common.plugin.RecordReceiver;
 import com.alibaba.datax.common.spi.Writer;
 import com.alibaba.datax.common.util.Configuration;
+import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
+import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.*;
@@ -12,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
+
 public class KuduWriter extends Writer{
     public static class Job extends Writer.Job {
         private Configuration originalConfig = null;
@@ -25,8 +28,11 @@ public class KuduWriter extends Writer{
         }
         @Override
         public void init() {
+
             this.originalConfig = super.getPluginJobConf();
         }
+
+
         @Override
         public void prepare() {
             super.prepare();
@@ -46,6 +52,29 @@ public class KuduWriter extends Writer{
         private Boolean isUpdate;
         private Integer batchSize = 1024;
         private Schema schema;
+
+
+        private List<ColumnSchema> genColumnList() {
+            List<ColumnSchema> columnList = new ArrayList<ColumnSchema>();
+            List column = writerSliceConfig.getList(Key.KUDU_COLUMN);
+            if (column != null) {
+                for (Object col : column) {
+                    JSONObject jo = JSONObject.parseObject(col.toString());
+                    String colName = jo.getString("name");
+                    try {
+                        ColumnSchema colSchema = schema.getColumn(colName);
+                        columnList.add(colSchema);
+                    } catch (Exception e) {
+                        throw DataXException.asDataXException(KuduWriterErrorCode.ILLEGAL_VALUE, col.toString() + " unsupported type");
+
+                    }
+                }
+            }
+
+          
+            return columnList;
+        }
+
         @Override
         public void prepare() {
             super.prepare();
@@ -118,7 +147,11 @@ public class KuduWriter extends Writer{
                             continue;
                         }
                         try{
-                            generateColumnData(row, i, record);
+                            if(genColumnList().size()==0){
+                                generateColumnData(row, i, record);
+                            }else {
+                                generateColumnData(row, i, record,genColumnList().get(i));
+                            }
                         }catch (Exception e){
                             super.getTaskPluginCollector().collectDirtyRecord(record ,e.getMessage());
                             flag = 1;
@@ -183,6 +216,8 @@ public class KuduWriter extends Writer{
          * @param row The row to add the field to
          */
         private void generateColumnData(PartialRow row, Integer index, Record record) {
+
+
             Type type = this.schema.getColumnByIndex(index).getType();
             switch (type) {
                 //因为DataX内部转换原因，Date类型会转成String类型
@@ -220,5 +255,53 @@ public class KuduWriter extends Writer{
                     throw DataXException.asDataXException(KuduWriterErrorCode.UNKNOWN_TYPE, record.getColumn(index).getType().toString());
             }
         }
+
+        /**
+         * 按照列名写入数据
+         * @param row
+         * @param index
+         * @param record
+         * @param columnSchema
+         */
+        private void generateColumnData(PartialRow row, Integer index, Record record,ColumnSchema columnSchema) {
+            Type type = columnSchema.getType();
+            switch (type) {
+                //因为DataX内部转换原因，Date类型会转成String类型
+                case INT8:
+                    row.addByte(columnSchema.getName(),  record.getColumn(index).asDouble().byteValue());
+                    return;
+                case INT16:
+                    row.addShort(columnSchema.getName(), record.getColumn(index).asDouble().shortValue());
+                    return;
+                case INT32:
+                    row.addInt(columnSchema.getName(), record.getColumn(index).asDouble().intValue());
+                    return;
+                case INT64:
+                    row.addLong(columnSchema.getName(), record.getColumn(index).asLong().longValue());
+                    return;
+                case UNIXTIME_MICROS:
+                    row.addLong(columnSchema.getName(), record.getColumn(index).asLong());
+                    return;
+                case BINARY:
+                    row.addBinary(columnSchema.getName(), record.getColumn(index).asBytes());
+                    return;
+                case STRING:
+                    row.addString(columnSchema.getName(), record.getColumn(index).asString());
+                    return;
+                case BOOL:
+                    row.addBoolean(columnSchema.getName(), record.getColumn(index).asBoolean());
+                    return;
+                case FLOAT:
+                    row.addFloat(columnSchema.getName(), record.getColumn(index).asDouble().floatValue());
+                    return;
+                case DOUBLE:
+                    row.addDouble(columnSchema.getName(), record.getColumn(index).asDouble());
+                    return;
+                default:
+                    throw DataXException.asDataXException(KuduWriterErrorCode.UNKNOWN_TYPE, record.getColumn(index).getType().toString());
+            }
+        }
+
+
     }
 }
